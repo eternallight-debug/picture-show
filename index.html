@@ -278,28 +278,40 @@
         let btnStartX = 0, btnStartY = 0;
         let touchClickCount = 0;
         let touchClickTimer = null;
+        let infoVisible = false;
 
-        // PC右键拖动
+        // PC端：禁止拖动，仅悬浮显示
         floatBtn.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            isDragging = true;
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-            const rect = floatBtn.getBoundingClientRect();
-            btnStartX = rect.left;
-            btnStartY = rect.top;
-            floatBtn.style.cursor = 'grabbing';
+        });
+
+        // 移动端：单击切换显示/隐藏，双击拖动
+        floatBtn.addEventListener('click', (e) => {
+            const isMobile = /iPhone|Android|iPad|iPod/.test(navigator.userAgent);
+            if (!isMobile) return;
+            
+            if (isDragging) return;
+            infoVisible = !infoVisible;
+            if (infoVisible) {
+                showInfo();
+            } else {
+                infoBox.style.display = 'none';
+            }
         });
 
         // 移动端双击拖动
         floatBtn.addEventListener('touchstart', (e) => {
             e.preventDefault();
             touchClickCount++;
+            
             if (touchClickCount === 1) {
-                touchClickTimer = setTimeout(() => touchClickCount = 0, 300);
+                touchClickTimer = setTimeout(() => {
+                    touchClickCount = 0;
+                }, 300);
             } else if (touchClickCount === 2) {
                 clearTimeout(touchClickTimer);
                 touchClickCount = 0;
+                
                 isDragging = true;
                 const t = e.touches[0];
                 dragStartX = t.clientX;
@@ -313,13 +325,6 @@
         // 拖动移动
         document.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
-            const dx = e.clientX - dragStartX;
-            const dy = e.clientY - dragStartY;
-            floatBtn.style.left = `${btnStartX + dx}px`;
-            floatBtn.style.top = `${btnStartY + dy}px`;
-            floatBtn.style.bottom = 'auto';
-            floatBtn.style.right = 'auto';
-            if (infoBox.style.display === 'block') showInfo();
         });
 
         document.addEventListener('touchmove', (e) => {
@@ -328,27 +333,35 @@
             const t = e.touches[0];
             const dx = t.clientX - dragStartX;
             const dy = t.clientY - dragStartY;
+            
             floatBtn.style.left = `${btnStartX + dx}px`;
             floatBtn.style.top = `${btnStartY + dy}px`;
             floatBtn.style.bottom = 'auto';
             floatBtn.style.right = 'auto';
-            if (infoBox.style.display === 'block') showInfo();
+            
+            if (infoVisible) showInfo();
         }, { passive: false });
 
         // 结束拖动
         document.addEventListener('mouseup', () => {
-            if (isDragging) {
-                isDragging = false;
-                floatBtn.style.cursor = 'pointer';
-            }
+            isDragging = false;
         });
+        
         document.addEventListener('touchend', () => {
             isDragging = false;
         });
 
-        // 原有交互
-        floatBtn.addEventListener('mouseenter', showInfo);
-        floatBtn.addEventListener('mouseleave', () => infoBox.style.display = 'none');
+        // PC端原有交互：悬浮显示
+        floatBtn.addEventListener('mouseenter', () => {
+            const isMobile = /iPhone|Android|iPad|iPod/.test(navigator.userAgent);
+            if (!isMobile) showInfo();
+        });
+        
+        floatBtn.addEventListener('mouseleave', () => {
+            const isMobile = /iPhone|Android|iPad|iPod/.test(navigator.userAgent);
+            if (!isMobile) infoBox.style.display = 'none';
+        });
+        
         window.addEventListener('scroll', () => {
             if (infoBox.style.display === 'block') showInfo();
         });
