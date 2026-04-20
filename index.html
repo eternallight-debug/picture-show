@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>多图全屏展示</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#000;overflow:hidden;cursor:pointer}
+canvas{display:block;width:100vw;height:100vh}
+
+.float-btn{
+  position:fixed;bottom:20px;right:20px;
+  width:60px;height:60px;
+  background:rgba(255,255,255,0.85);
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;z-index:999;cursor:pointer
+}
+
+.intro-popup{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  background:rgba(0,0,0,0.85);color:#fff;
+  padding:25px 30px;border-radius:12px;
+  max-width:80%;z-index:9999;display:none;
+  backdrop-filter:blur(4px)
+}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+<div class="float-btn" id="infoBtn">简介</div>
+<div class="intro-popup" id="infoPopup"></div>
+
+<script>
+const canvas = document.getElementById('canvas')
+const ctx = canvas.getContext('2d')
+const infoBtn = document.getElementById('infoBtn')
+const infoPopup = document.getElementById('infoPopup')
+
+// ======================
+//  自动加载 1、2、3... 一直到你设置的数量
+// ======================
+const CONFIG = {
+  startNumber: 1,      // 从 1.jpg 开始
+  totalImages: 99,     // 最大支持到 99.jpg（你可以改大）
+  audio: 'resource/1.mp3'
+}
+
+let images = []
+let texts = []
+let mainIndex = 0
+let audio = null
+let audioPlayed = false
+
+// 全屏画布
+function resize() {
+  canvas.width = window.innerWidth
+  canvas.height = window.innerHeight
+}
+resize()
+window.addEventListener('resize', resize)
+
+// 加载图片
+function loadImg(src) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.src = src
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+  })
+}
+
+// 加载文本
+function loadTxt(src) {
+  return fetch(src).then(r => r.text()).catch(() => '暂无简介')
+}
+
+// 批量加载所有图片
+async function loadAll() {
+  const imgPromises = []
+  const txtPromises = []
+
+  for (let i = CONFIG.startNumber; i <= CONFIG.totalImages; i++) {
+    imgPromises.push(loadImg(`resource/${i}.jpg`))
+    txtPromises.push(loadTxt(`resource/${i}.txt`))
+  }
+
+  const loadedImgs = await Promise.all(imgPromises)
+  const loadedTexts = await Promise.all(txtPromises)
+
+  // 过滤掉不存在的图片
+  images = loadedImgs.filter(Boolean)
+  texts = loadedTexts.filter(Boolean)
+
+  drawAll()
+}
+
+// 竖排连续铺满屏幕
+function drawAll() {
+  let currentY = 0
+  let maxArea = 0
+  let bestIdx = 0
+
+  images.forEach((img, idx) => {
+    const ratio = img.width / img.height
+    const screenRatio = canvas.width / canvas.height
+    let w, h
+
+    if (ratio > screenRatio) {
+      w = canvas.width
+      h = w / ratio
+    } else {
+      h = canvas.height - currentY
+      w = h * ratio
+    }
+
+    const x = (canvas.width - w) / 2
+    ctx.drawImage(img, x, currentY, w, h)
+
+    const area = w * h
+    if (area > maxArea) {
+      maxArea = area
+      bestIdx = idx
+    }
+
+    currentY += h
+  })
+
+  mainIndex = bestIdx
+}
+
+// 点击播放音乐
+function playMusic() {
+  if (audioPlayed) return
+  audioPlayed = true
+  audio = new Audio(CONFIG.audio)
+  audio.play().catch(err => console.log('需点击播放', err))
+}
+
+// 显示简介
+infoBtn.addEventListener('click', e => {
+  e.stopPropagation()
+  infoPopup.textContent = texts[mainIndex]
+  infoPopup.style.display = 'block'
+})
+
+infoPopup.addEventListener('click', () => {
+  infoPopup.style.display = 'none'
+})
+
+document.body.addEventListener('click', playMusic)
+loadAll()
+</script>
+</body>
+</html>
