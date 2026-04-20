@@ -44,6 +44,8 @@
             cursor: pointer;
             z-index: 999;
             transition: 0.3s;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
         #floatBtn:hover {
@@ -53,8 +55,6 @@
         /* 简介悬浮窗 */
         #infoBox {
             position: fixed;
-            bottom: 100px;
-            right: 30px;
             width: 320px;
             padding: 20px;
             background: rgba(0, 0, 0, 0.4);
@@ -64,9 +64,11 @@
             display: none;
             pointer-events: none;
             line-height: 1.6;
+            user-select: none;
+            -webkit-user-select: none;
         }
 
-        /* ========== 完全透明彩蛋音乐按钮 ========== */
+        /* 完全透明彩蛋音乐按钮 */
         #musicBtn {
             position: fixed;
             bottom: 30px;
@@ -81,7 +83,7 @@
             z-index: 999;
         }
 
-        /* 音乐悬浮窗：全透明，和简介一样大 */
+        /* 音乐悬浮窗 */
         #musicBox {
             position: fixed;
             bottom: 100px;
@@ -101,14 +103,10 @@
     <button id="floatBtn">简介</button>
     <div id="infoBox"></div>
 
-    <!-- 隐藏彩蛋触发区 -->
     <button id="musicBtn"></button>
     <div id="musicBox"></div>
 
     <script>
-        // ==========================================
-        // 所有资源都在 resource 文件夹里
-        // ==========================================
         const resourcePath = './resource/';
 
         const imgWrap = document.getElementById('imgWrap');
@@ -192,7 +190,7 @@
             }, delay);
         }
 
-        // 流式加载图片（从 1.jpg 开始）
+        // 流式加载图片
         async function startStreamLoad() {
             let index = 1;
             while (true) {
@@ -222,19 +220,40 @@
             }
         }
 
-        // 获取当前屏幕图片
+        // ==============================================
+        // 核心：PC端原样，移动端按钮在哪张图就显示哪张简介
+        // ==============================================
         function getCurrentViewImage() {
-            const cs = document.querySelectorAll('.img-container');
-            let maxIdx = 1, maxV = 0, h = innerHeight;
-            cs.forEach(c => {
-                const r = c.getBoundingClientRect();
-                const v = Math.min(r.bottom, h) - Math.max(r.top, 0);
-                if (v > maxV) { maxV = v; maxIdx = c.dataset.index; }
-            });
-            return maxIdx;
+            const isMobile = /iPhone|Android|iPad|iPod/.test(navigator.userAgent);
+
+            // PC端：保持你原来逻辑不变
+            if (!isMobile) {
+                const cs = document.querySelectorAll('.img-container');
+                let maxIdx = 1, maxV = 0, h = innerHeight;
+                cs.forEach(c => {
+                    const r = c.getBoundingClientRect();
+                    const v = Math.min(r.bottom, h) - Math.max(r.top, 0);
+                    if (v > maxV) { maxV = v; maxIdx = c.dataset.index; }
+                });
+                return maxIdx;
+            }
+
+            // 移动端：按钮中心压住哪张图 → 显示哪张
+            const btnRect = floatBtn.getBoundingClientRect();
+            const cx = btnRect.left + btnRect.width / 2;
+            const cy = btnRect.top + btnRect.height / 2;
+
+            const items = document.querySelectorAll('.img-container');
+            for (let item of items) {
+                const r = item.getBoundingClientRect();
+                if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
+                    return item.dataset.index;
+                }
+            }
+            return 1;
         }
 
-        // 显示简介
+        // 显示简介（位置跟随按钮）
         async function showInfo() {
             const idx = getCurrentViewImage();
             try {
@@ -244,9 +263,90 @@
                 infoBox.innerHTML = '';
             }
             infoBox.style.display = 'block';
+            const btnRect = floatBtn.getBoundingClientRect();
+            const top = btnRect.top - infoBox.offsetHeight - 10;
+            const left = btnRect.left + (btnRect.width - infoBox.offsetWidth) / 2;
+            infoBox.style.top = `${top}px`;
+            infoBox.style.left = `${left}px`;
+            infoBox.style.bottom = 'auto';
+            infoBox.style.right = 'auto';
         }
 
-        // 事件绑定
+        // ========== 拖动逻辑 ==========
+        let isDragging = false;
+        let dragStartX = 0, dragStartY = 0;
+        let btnStartX = 0, btnStartY = 0;
+        let touchClickCount = 0;
+        let touchClickTimer = null;
+
+        // PC右键拖动
+        floatBtn.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            isDragging = true;
+            dragStartX = e.clientX;
+            dragStartY = e.clientY;
+            const rect = floatBtn.getBoundingClientRect();
+            btnStartX = rect.left;
+            btnStartY = rect.top;
+            floatBtn.style.cursor = 'grabbing';
+        });
+
+        // 移动端双击拖动
+        floatBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            touchClickCount++;
+            if (touchClickCount === 1) {
+                touchClickTimer = setTimeout(() => touchClickCount = 0, 300);
+            } else if (touchClickCount === 2) {
+                clearTimeout(touchClickTimer);
+                touchClickCount = 0;
+                isDragging = true;
+                const t = e.touches[0];
+                dragStartX = t.clientX;
+                dragStartY = t.clientY;
+                const rect = floatBtn.getBoundingClientRect();
+                btnStartX = rect.left;
+                btnStartY = rect.top;
+            }
+        }, { passive: false });
+
+        // 拖动移动
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            const dx = e.clientX - dragStartX;
+            const dy = e.clientY - dragStartY;
+            floatBtn.style.left = `${btnStartX + dx}px`;
+            floatBtn.style.top = `${btnStartY + dy}px`;
+            floatBtn.style.bottom = 'auto';
+            floatBtn.style.right = 'auto';
+            if (infoBox.style.display === 'block') showInfo();
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const t = e.touches[0];
+            const dx = t.clientX - dragStartX;
+            const dy = t.clientY - dragStartY;
+            floatBtn.style.left = `${btnStartX + dx}px`;
+            floatBtn.style.top = `${btnStartY + dy}px`;
+            floatBtn.style.bottom = 'auto';
+            floatBtn.style.right = 'auto';
+            if (infoBox.style.display === 'block') showInfo();
+        }, { passive: false });
+
+        // 结束拖动
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                floatBtn.style.cursor = 'pointer';
+            }
+        });
+        document.addEventListener('touchend', () => {
+            isDragging = false;
+        });
+
+        // 原有交互
         floatBtn.addEventListener('mouseenter', showInfo);
         floatBtn.addEventListener('mouseleave', () => infoBox.style.display = 'none');
         window.addEventListener('scroll', () => {
