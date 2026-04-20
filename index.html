@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>逐行扫描图片查看器</title>
+    <title>流式加载图片查看器（一行一行加载）</title>
     <style>
         * {
             margin: 0;
@@ -13,20 +13,22 @@
 
         body {
             overflow-x: hidden;
-            background: #000;
+            background: #000; /* 黑色背景，不黑屏等待 */
         }
 
-        /* 图片容器：逐行渲染 */
+        /* 核心：启用浏览器原生流式加载，一行一行渲染 */
         .img-container {
             width: 100vw;
-            position: relative;
-            overflow: hidden;
+            display: block;
         }
 
         .img-container img {
             width: 100%;
             display: block;
-            opacity: 0; /* 默认隐藏，逐行显示 */
+            object-fit: cover;
+            /* 关键：让图片一边下载一边显示，不等待全部加载 */
+            decoding: async;
+            loading: eager;
         }
 
         /* 右下角悬浮按钮 */
@@ -47,7 +49,7 @@
         }
 
         #floatBtn:hover {
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.8);
         }
 
         /* 半透明简介悬浮窗 */
@@ -64,7 +66,6 @@
             display: none;
             pointer-events: none;
             line-height: 1.6;
-            font-size: 15px;
         }
     </style>
 </head>
@@ -75,75 +76,50 @@
 
     <script>
         const resourcePath = './resource/';
-        const SCAN_LINE_HEIGHT = 30; // 每次扫描 30 像素
 
         const imgWrap = document.getElementById('imgWrap');
         const floatBtn = document.getElementById('floatBtn');
         const infoBox = document.getElementById('infoBox');
 
-        // ==============================================
-        // 核心：逐行扫描加载图片（流式加载，网速越快扫得越快）
-        // ==============================================
-        async function scanLoadImage(imgUrl, index) {
-            const container = document.createElement('div');
-            container.className = 'img-container';
-            container.dataset.index = index;
-            imgWrap.appendChild(container);
-
-            const img = new Image();
-            img.src = imgUrl;
-            img.crossOrigin = 'anonymous';
-
-            // 等待图片开始加载（流式加载）
-            await new Promise(resolve => img.onload = resolve);
-            img.style.opacity = 1;
-
-            const imgHeight = img.naturalHeight;
-            let currentHeight = 0;
-
-            // 创建遮罩层，实现逐行显示
-            const mask = document.createElement('div');
-            mask.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: #000;
-                z-index: 2;
-                transition: height 0.05s linear;
-            `;
-            container.appendChild(mask);
-            container.appendChild(img);
-
-            // 逐行向上缩短遮罩 → 显示图片
-            const scan = () => {
-                if (currentHeight >= imgHeight) {
-                    mask.remove(); // 扫描完成，移除遮罩
-                    return;
-                }
-                currentHeight += SCAN_LINE_HEIGHT;
-                mask.style.height = `${imgHeight - currentHeight}px`;
-                requestAnimationFrame(scan);
-            };
-            scan();
-        }
-
-        // 自动加载所有图片，按顺序逐张扫描
-        async function loadAllImages() {
+        // 立即插入图片DOM → 浏览器立刻开始流式下载、一行行显示
+        // 不等加载完成，不黑屏！
+        async function startStreamLoad() {
             let index = 1;
+
             while (true) {
-                const url = `${resourcePath}${index}.jpg`;
-                try {
-                    await scanLoadImage(url, index); // 等待当前图片扫描完成再加载下一张
-                    index++;
-                } catch (e) {
-                    break; // 无更多图片时停止
+                const imgUrl = `${resourcePath}${index}.jpg`;
+
+                // 立刻创建图片，立即开始流式加载
+                const container = document.createElement('div');
+                container.className = 'img-container';
+                container.dataset.index = index;
+
+                const img = document.createElement('img');
+                img.src = imgUrl;
+                img.alt = `图片${index}`;
+
+                container.appendChild(img);
+                imgWrap.appendChild(container);
+
+                // 只检查图片是否存在，不等待加载完成
+                // 图片一边下载一边显示，第一行秒出
+                const exists = await new Promise(resolve => {
+                    const test = new Image();
+                    test.src = imgUrl;
+                    test.onload = () => resolve(true);
+                    test.onerror = () => resolve(false);
+                });
+
+                if (!exists) {
+                    container.remove();
+                    break;
                 }
+
+                index++;
             }
         }
 
-        // 获取当前屏幕占比最大的图片
+        // 获取当前屏幕主图
         function getCurrentViewImage() {
             const containers = document.querySelectorAll('.img-container');
             let maxIndex = 1;
@@ -161,7 +137,7 @@
             return maxIndex;
         }
 
-        // 悬停显示简介（只显示纯文本，半透明）
+        // 悬停显示简介（纯文本、半透明）
         async function showInfo() {
             const idx = getCurrentViewImage();
             try {
@@ -175,10 +151,12 @@
 
         floatBtn.addEventListener('mouseenter', showInfo);
         floatBtn.addEventListener('mouseleave', () => infoBox.style.display = 'none');
-        window.addEventListener('scroll', () => infoBox.style.display === 'block' && showInfo());
+        window.addEventListener('scroll', () => {
+            if (infoBox.style.display === 'block') showInfo();
+        });
 
-        // 启动
-        loadAllImages();
+        // 页面一打开就开始流式加载，不等待、不黑屏
+        startStreamLoad();
     </script>
 </body>
 </html>
