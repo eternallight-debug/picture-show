@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>流式加载图片查看器（一行一行加载）</title>
+    <title>彩蛋是音乐《花之舞》</title>
     <style>
         * {
             margin: 0;
@@ -13,10 +13,9 @@
 
         body {
             overflow-x: hidden;
-            background: #000; /* 黑色背景，不黑屏等待 */
+            background: #000;
         }
 
-        /* 核心：启用浏览器原生流式加载，一行一行渲染 */
         .img-container {
             width: 100vw;
             display: block;
@@ -26,12 +25,11 @@
             width: 100%;
             display: block;
             object-fit: cover;
-            /* 关键：让图片一边下载一边显示，不等待全部加载 */
             decoding: async;
             loading: eager;
         }
 
-        /* 右下角悬浮按钮 */
+        /* 右下角简介按钮 */
         #floatBtn {
             position: fixed;
             bottom: 30px;
@@ -52,7 +50,7 @@
             background: rgba(0, 0, 0, 0.8);
         }
 
-        /* 半透明简介悬浮窗 */
+        /* 简介悬浮窗 */
         #infoBox {
             position: fixed;
             bottom: 100px;
@@ -67,6 +65,35 @@
             pointer-events: none;
             line-height: 1.6;
         }
+
+        /* ========== 完全透明彩蛋音乐按钮 ========== */
+        #musicBtn {
+            position: fixed;
+            bottom: 30px;
+            left: 30px;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: transparent !important;
+            border: none !important;
+            opacity: 0 !important;
+            cursor: pointer;
+            z-index: 999;
+        }
+
+        /* 音乐悬浮窗：全透明，和简介一样大 */
+        #musicBox {
+            position: fixed;
+            bottom: 100px;
+            left: 30px;
+            width: 320px;
+            height: auto;
+            background: transparent;
+            border-radius: 12px;
+            z-index: 998;
+            display: none;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -74,88 +101,161 @@
     <button id="floatBtn">简介</button>
     <div id="infoBox"></div>
 
+    <!-- 隐藏彩蛋触发区 -->
+    <button id="musicBtn"></button>
+    <div id="musicBox"></div>
+
     <script>
+        // ==========================================
+        // 所有资源都在 resource 文件夹里
+        // ==========================================
         const resourcePath = './resource/';
 
         const imgWrap = document.getElementById('imgWrap');
         const floatBtn = document.getElementById('floatBtn');
         const infoBox = document.getElementById('infoBox');
+        const musicBtn = document.getElementById('musicBtn');
+        const musicBox = document.getElementById('musicBox');
 
-        // 立即插入图片DOM → 浏览器立刻开始流式下载、一行行显示
-        // 不等加载完成，不黑屏！
+        // 音乐相关
+        let audio = null;
+        let fadeTimer = null;
+        let hoverStartTime = 0;
+        let isFadingIn = false;
+        let isFadingOut = false;
+
+        // 初始化音频
+        function initAudio() {
+            if (!audio) {
+                audio = new Audio(`${resourcePath}0.MP3`);
+                audio.loop = true;
+                audio.volume = 0;
+                audio.preload = 'auto';
+            }
+        }
+
+        // 1秒渐入
+        function fadeInAudio() {
+            if (isFadingIn || audio.volume >= 1) return;
+            isFadingIn = true;
+            isFadingOut = false;
+            clearInterval(fadeTimer);
+            const start = Date.now();
+            fadeTimer = setInterval(() => {
+                const p = Math.min((Date.now() - start) / 1000, 1);
+                audio.volume = p;
+                if (p >= 1) {
+                    clearInterval(fadeTimer);
+                    isFadingIn = false;
+                }
+            }, 10);
+        }
+
+        // 1秒渐出
+        function fadeOutAudio() {
+            if (isFadingOut || audio.volume <= 0) {
+                if (audio) audio.pause();
+                return;
+            }
+            isFadingOut = true;
+            isFadingIn = false;
+            clearInterval(fadeTimer);
+            const start = Date.now();
+            fadeTimer = setInterval(() => {
+                const p = Math.min((Date.now() - start) / 1000, 1);
+                audio.volume = 1 - p;
+                if (p >= 1) {
+                    clearInterval(fadeTimer);
+                    audio.volume = 0;
+                    audio.pause();
+                    isFadingOut = false;
+                }
+            }, 10);
+        }
+
+        // 鼠标进入彩蛋区
+        function handleMusicHoverStart() {
+            hoverStartTime = Date.now();
+            initAudio();
+            audio.play().catch(err => {});
+            fadeInAudio();
+            musicBox.style.display = 'block';
+        }
+
+        // 鼠标离开
+        function handleMusicHoverEnd() {
+            const d = Date.now() - hoverStartTime;
+            const delay = d < 1000 ? 1000 - d : 0;
+            setTimeout(() => {
+                fadeOutAudio();
+                musicBox.style.display = 'none';
+            }, delay);
+        }
+
+        // 流式加载图片（从 1.jpg 开始）
         async function startStreamLoad() {
             let index = 1;
-
             while (true) {
                 const imgUrl = `${resourcePath}${index}.jpg`;
-
-                // 立刻创建图片，立即开始流式加载
                 const container = document.createElement('div');
                 container.className = 'img-container';
                 container.dataset.index = index;
 
                 const img = document.createElement('img');
                 img.src = imgUrl;
-                img.alt = `图片${index}`;
-
+                img.alt = `pic${index}`;
                 container.appendChild(img);
                 imgWrap.appendChild(container);
 
-                // 只检查图片是否存在，不等待加载完成
-                // 图片一边下载一边显示，第一行秒出
                 const exists = await new Promise(resolve => {
-                    const test = new Image();
-                    test.src = imgUrl;
-                    test.onload = () => resolve(true);
-                    test.onerror = () => resolve(false);
+                    const t = new Image();
+                    t.src = imgUrl;
+                    t.onload = () => resolve(true);
+                    t.onerror = () => resolve(false);
                 });
 
                 if (!exists) {
                     container.remove();
                     break;
                 }
-
                 index++;
             }
         }
 
-        // 获取当前屏幕主图
+        // 获取当前屏幕图片
         function getCurrentViewImage() {
-            const containers = document.querySelectorAll('.img-container');
-            let maxIndex = 1;
-            let maxVisible = 0;
-            const h = window.innerHeight;
-
-            containers.forEach(c => {
+            const cs = document.querySelectorAll('.img-container');
+            let maxIdx = 1, maxV = 0, h = innerHeight;
+            cs.forEach(c => {
                 const r = c.getBoundingClientRect();
-                const visible = Math.min(r.bottom, h) - Math.max(r.top, 0);
-                if (visible > maxVisible) {
-                    maxVisible = visible;
-                    maxIndex = c.dataset.index;
-                }
+                const v = Math.min(r.bottom, h) - Math.max(r.top, 0);
+                if (v > maxV) { maxV = v; maxIdx = c.dataset.index; }
             });
-            return maxIndex;
+            return maxIdx;
         }
 
-        // 悬停显示简介（纯文本、半透明）
+        // 显示简介
         async function showInfo() {
             const idx = getCurrentViewImage();
             try {
-                const res = await fetch(`${resourcePath}${idx}.txt`);
-                infoBox.innerHTML = res.ok ? await res.text() : '';
+                const r = await fetch(`${resourcePath}${idx}.txt`);
+                infoBox.innerHTML = r.ok ? await r.text() : '';
             } catch {
                 infoBox.innerHTML = '';
             }
             infoBox.style.display = 'block';
         }
 
+        // 事件绑定
         floatBtn.addEventListener('mouseenter', showInfo);
         floatBtn.addEventListener('mouseleave', () => infoBox.style.display = 'none');
         window.addEventListener('scroll', () => {
             if (infoBox.style.display === 'block') showInfo();
         });
 
-        // 页面一打开就开始流式加载，不等待、不黑屏
+        musicBtn.addEventListener('mouseenter', handleMusicHoverStart);
+        musicBtn.addEventListener('mouseleave', handleMusicHoverEnd);
+
         startStreamLoad();
     </script>
 </body>
